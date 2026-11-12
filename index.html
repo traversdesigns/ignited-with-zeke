@@ -121,6 +121,7 @@ async function say(t){
  if(!response.ok)throw Error('Voice service HTTP '+response.status);const blob=await response.blob();if(!blob.type.startsWith('audio/')||!blob.size)throw Error('No audio returned');if(request!==zekeVoiceRequest)return;
  const url=URL.createObjectURL(blob),audio=zekeSharedAudio||new Audio();if(zekeSharedUrl)URL.revokeObjectURL(zekeSharedUrl);zekeSharedUrl=url;audio.src=url;zekeAudio=audio;let completed=false;const cleanup=()=>{if(completed)return;completed=true;clearTimeout(zekePlaybackWatchdog);if(zekeSharedUrl===url){URL.revokeObjectURL(url);zekeSharedUrl=null}if(zekeAudio===audio)zekeAudio=null;finish()};
  audio.onended=cleanup;audio.onerror=cleanup;
+ const playbackStartedAt=Date.now();
  const watchPlayback=()=>{
    clearTimeout(zekePlaybackWatchdog);
    zekePlaybackWatchdog=setTimeout(()=>{
@@ -133,7 +134,7 @@ async function say(t){
      }
      if(audio.currentTime>0&&Number.isFinite(audio.duration)&&audio.duration>0){
        const remaining=audio.duration-audio.currentTime;
-       if(remaining>0&&remaining<35){watchPlayback();return}
+       if(remaining>0&&remaining<35&&Date.now()-playbackStartedAt<Math.min(45000,(audio.duration+9)*1000)){watchPlayback();return}
      }
      $('zekeAiVoiceStatus').textContent='Audio completion timeout; reopening microphone.';try{audio.pause()}catch(e){}cleanup();
    },4500);
