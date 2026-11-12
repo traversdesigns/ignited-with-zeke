@@ -93,7 +93,7 @@ async function say(t){
  if(!t)return; const request=++zekeVoiceRequest; speaking=true;
  try{rec?.stop()}catch(e){};try{speechSynthesis.cancel()}catch(e){};
  if(zekeAudio){zekeAudio.pause();zekeAudio=null}
- zekeScheduleSpeechMotion(t);$('reply').textContent=t;
+ try{zekeScheduleSpeechMotion(t)}catch(e){console.warn('Movement unavailable:',e)}$('reply').textContent=t;
  const finish=()=>{if(request!==zekeVoiceRequest)return;zekeStopMotion();speaking=false;if(active){clearTimeout(listenRetry);listenRetry=setTimeout(listen,650)}};
  const fallback=()=>{if(request!==zekeVoiceRequest)return;if(!('speechSynthesis'in window)){finish();return}const u=new SpeechSynthesisUtterance(t);u.lang='en-US';u.volume=1;u.rate=Number($('rate').value);u.pitch=Number($('pitch').value);u.voice=voices.find(v=>v.name===$('voice').value)||null;let completed=false;const done=()=>{if(completed)return;completed=true;clearTimeout(watchdog);finish()};const watchdog=setTimeout(()=>{if(!completed){$('zekeAiVoiceStatus').textContent='Tablet speech did not finish; resetting microphone.';speechSynthesis.cancel();done()}},Math.min(30000,Math.max(8000,t.length*115)));u.onend=done;u.onerror=done;speechSynthesis.speak(u)};
  if(!$('zekeAiVoiceEnabled')?.checked){fallback();return}
