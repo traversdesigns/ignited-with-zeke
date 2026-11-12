@@ -72,22 +72,24 @@ function zekeStopMotion(){
  zekeClearMotionTimers();
  if(writer)zekeSetMovement(false).catch(e=>zekeMotionStatus('Movement stop command failed: '+e.message));
 }
-function zekeScheduleSpeechMotion(text){
+function zekeScheduleSpeechMotion(){
  zekeClearMotionTimers();
  if(!$('zekeNaturalMotion')?.checked||!writer||sleeping)return;
  const generation=zekeMotionGeneration;
- const duration=Math.min(18000,Math.max(2200,String(text).length*65));
- // Brief movement-enable windows with still pauses. Firmware chooses actual motor animations.
+ // Motion cycles while speech is actually playing; zekeStopMotion() cancels them on completion.
  const schedule=(delay,enabled)=>{
   const id=setTimeout(async()=>{
-   if(generation!==zekeMotionGeneration||sleeping||!writer)return;
-   try{await zekeSetMovement(enabled);zekeMotionStatus(enabled?'Movement window enabled while speaking.':'Movement paused.')}
-   catch(e){zekeMotionStatus('Movement command failed: '+e.message);zekeStopMotion()}
+   if(generation!==zekeMotionGeneration||sleeping||!writer||!speaking)return;
+   try{
+     await zekeSetMovement(enabled);
+     if(generation!==zekeMotionGeneration)return;
+     zekeMotionStatus(enabled?'Movement enabled during speech.':'Natural stillness during speech.');
+     schedule(enabled?1100:3100,!enabled);
+   }catch(e){zekeMotionStatus('Movement command failed: '+e.message);zekeStopMotion()}
   },delay);
   zekeMotionTimers.push(id);
  };
- for(let t=350;t<duration;t+=4200){schedule(t,true);schedule(Math.min(t+1100,duration),false)}
- schedule(duration+100,false);
+ schedule(200,true);
 }
 $('zekeNaturalMotion').onchange=()=>{
  if(!$('zekeNaturalMotion').checked){zekeStopMotion();zekeMotionStatus('Natural movement disabled.')}
@@ -116,7 +118,7 @@ async function say(t){
  try{rec?.abort()}catch(e){}
  try{speechSynthesis.cancel()}catch(e){}
  if(zekeAudio){try{zekeAudio.pause()}catch(e){}zekeAudio=null}
- try{zekeScheduleSpeechMotion(t)}catch(e){}
+ // Motion begins only after playback starts, never while waiting for generated audio.
  $('reply').textContent=t;
  const finish=()=>{
    if(request!==zekeVoiceRequest)return;
@@ -132,7 +134,7 @@ async function say(t){
    let done=false;
    const complete=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};
    const timer=setTimeout(()=>{try{speechSynthesis.cancel()}catch(e){}complete()},Math.min(30000,Math.max(8000,t.length*115)));
-   u.onend=complete;u.onerror=complete;
+   u.onstart=()=>{try{zekeScheduleSpeechMotion()}catch(e){}};u.onend=complete;u.onerror=complete;
    try{speechSynthesis.speak(u)}catch(e){complete()}
  });
  try{
@@ -169,6 +171,7 @@ async function say(t){
      audio.onerror=()=>{$('zekeAiVoiceStatus').textContent='Audio playback error.';complete()};
      try{
        await audio.play();
+       try{zekeScheduleSpeechMotion()}catch(e){}
        $('zekeAiVoiceStatus').textContent='Zeke speaking through Bluetooth. Waiting for actual audio end…';
        // Safety only: do not cut off speech because playback position stalls or pauses.
        // Allow long responses and Bluetooth buffering before recovering.
