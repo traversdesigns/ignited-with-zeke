@@ -434,4 +434,43 @@ $('zekeWake').onclick=async()=>{
 };
 $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()};
 })();
+</script><script>
+/* Isolated connection test: remains usable if another IGNITED module fails at runtime. */
+(function(){
+  function init(){
+    const btn=document.getElementById('zekeTest');
+    const status=document.getElementById('zekeAiStatus');
+    const pinInput=document.getElementById('zekePin');
+    if(!btn||!status||!pinInput)return;
+    btn.addEventListener('click',async function(event){
+      event.stopImmediatePropagation();
+      event.preventDefault();
+      status.textContent='Testing connection…';
+      btn.disabled=true;
+      const pin=pinInput.value.trim();
+      if(!pin){status.textContent='Please enter your PIN first.';btn.disabled=false;return}
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),18000);
+      try{
+        const response=await fetch('https://ingited-zeke-ai.traversdesigns.workers.dev/chat',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-Zeke-Pin':pin},
+          body:JSON.stringify({message:'Introduce yourself in one funny sentence.'}),
+          signal:controller.signal
+        });
+        if(!response.ok){
+          status.textContent=response.status===401?'PIN rejected (401). Verify your saved PIN matches Cloudflare.':'Connection failed: HTTP '+response.status;
+          return;
+        }
+        const data=await response.json();
+        status.textContent=data.reply?'Connected! '+data.reply:'Connected, but no AI reply was returned.';
+        const reply=document.getElementById('reply');
+        if(reply&&data.reply)reply.textContent=data.reply;
+      }catch(error){status.textContent='Connection error: '+error.message}
+      finally{clearTimeout(timeout);btn.disabled=false}
+    },true);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
 </script></body></html>
