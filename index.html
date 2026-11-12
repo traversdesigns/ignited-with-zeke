@@ -121,26 +121,25 @@ async function say(t){
  if(!response.ok)throw Error('Voice service HTTP '+response.status);const blob=await response.blob();if(!blob.type.startsWith('audio/')||!blob.size)throw Error('No audio returned');if(request!==zekeVoiceRequest)return;
  const url=URL.createObjectURL(blob),audio=zekeSharedAudio||new Audio();if(zekeSharedUrl)URL.revokeObjectURL(zekeSharedUrl);zekeSharedUrl=url;audio.src=url;zekeAudio=audio;let completed=false;const cleanup=()=>{if(completed)return;completed=true;clearTimeout(zekePlaybackWatchdog);if(zekeSharedUrl===url){URL.revokeObjectURL(url);zekeSharedUrl=null}if(zekeAudio===audio)zekeAudio=null;finish()};
  audio.onended=cleanup;audio.onerror=cleanup;
- const playbackStartedAt=Date.now();
+ let lastProgressAt=Date.now(),lastPlaybackPosition=0;
  const watchPlayback=()=>{
    clearTimeout(zekePlaybackWatchdog);
    zekePlaybackWatchdog=setTimeout(()=>{
      if(completed||request!==zekeVoiceRequest)return;
-     if(audio.ended||(audio.duration&&Number.isFinite(audio.duration)&&audio.currentTime>=audio.duration-0.3)){
-       $('zekeAiVoiceStatus').textContent='Playback completed; reopening microphone.';cleanup();return;
+     const duration=audio.duration,position=audio.currentTime;
+     if(position>lastPlaybackPosition+0.08){lastPlaybackPosition=position;lastProgressAt=Date.now()}
+     if(audio.ended||(Number.isFinite(duration)&&duration>0&&position>=duration-0.2)){
+       $('zekeAiVoiceStatus').textContent='Voice finished. Restarting microphone.';cleanup();return;
      }
-     if(audio.paused&&audio.currentTime>0){
-       $('zekeAiVoiceStatus').textContent='Playback interrupted by iPhone; reopening microphone.';cleanup();return;
+     if(audio.paused||Date.now()-lastProgressAt>3500){
+       $('zekeAiVoiceStatus').textContent='Voice playback stalled. Recovering microphone.';
+       try{audio.pause()}catch(e){}cleanup();return;
      }
-     if(audio.currentTime>0&&Number.isFinite(audio.duration)&&audio.duration>0){
-       const remaining=audio.duration-audio.currentTime;
-       if(remaining>0&&remaining<35&&Date.now()-playbackStartedAt<Math.min(45000,(audio.duration+9)*1000)){watchPlayback();return}
-     }
-     $('zekeAiVoiceStatus').textContent='Audio completion timeout; reopening microphone.';try{audio.pause()}catch(e){}cleanup();
-   },4500);
+     $('status').textContent='Zeke speaking ('+Math.round(position)+'s); microphone resumes automatically.';
+     watchPlayback();
+   },700);
  };
- audio.onloadedmetadata=watchPlayback;
- $('zekeAiVoiceStatus').textContent='Male voice audio received. Starting playback…';await audio.play();watchPlayback();$('zekeAiVoiceStatus').textContent='AI male voice playing through selected Bluetooth/media output.';
+ $('zekeAiVoiceStatus').textContent='Male voice audio received. Starting playback…';await audio.play();lastProgressAt=Date.now();watchPlayback();$('zekeAiVoiceStatus').textContent='AI male voice playing through selected Bluetooth/media output.';
  }catch(e){if(request!==zekeVoiceRequest)return;const blocked=e.name==='NotAllowedError';$('zekeAiVoiceStatus').textContent=blocked?'iPhone blocked automatic audio playback. Keep IGNITED open and press Start listening again.':'AI voice failed ('+e.message+'). Using device voice.';fallback()}
 }
 let listenRetry=null,recognitionStarting=false,recognitionRunning=false,micFailures=0,recognitionGeneration=0,recognitionWatchdog=null,recognitionStalls=0;
