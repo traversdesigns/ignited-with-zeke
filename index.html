@@ -157,26 +157,26 @@ async function say(t){
    if(zekeSharedUrl)URL.revokeObjectURL(zekeSharedUrl);
    zekeSharedUrl=url;zekeAudio=audio;audio.src=url;
    await new Promise(async resolve=>{
-     let done=false,hardTimer=null,monitor=null,lastProgress=Date.now(),lastTime=0;
+     let done=false,hardTimer=null;
      const complete=()=>{
-       if(done)return;done=true;clearTimeout(hardTimer);clearInterval(monitor);
+       if(done)return;done=true;clearTimeout(hardTimer);
        audio.onended=null;audio.onerror=null;
        if(zekeSharedUrl===url){URL.revokeObjectURL(url);zekeSharedUrl=null}
        if(zekeAudio===audio)zekeAudio=null;
        resolve();
      };
-     audio.onended=complete;audio.onerror=complete;
+     audio.onended=()=>{$('zekeAiVoiceStatus').textContent='Entire voice response finished.';complete()};
+     audio.onerror=()=>{$('zekeAiVoiceStatus').textContent='Audio playback error.';complete()};
      try{
        await audio.play();
-       $('zekeAiVoiceStatus').textContent='Zeke speaking through Bluetooth…';
-       const maxMs=Math.min(45000,Math.max(10000,(Number.isFinite(audio.duration)?audio.duration*1000:16000)+5000));
-       hardTimer=setTimeout(()=>{try{audio.pause()}catch(e){}complete()},maxMs);
-       monitor=setInterval(()=>{
-         if(done)return;
-         if(audio.ended){complete();return}
-         if(audio.currentTime>lastTime+0.08){lastTime=audio.currentTime;lastProgress=Date.now()}
-         if(audio.paused||Date.now()-lastProgress>4500){try{audio.pause()}catch(e){}complete()}
-       },500);
+       $('zekeAiVoiceStatus').textContent='Zeke speaking through Bluetooth. Waiting for actual audio end…';
+       // Safety only: do not cut off speech because playback position stalls or pauses.
+       // Allow long responses and Bluetooth buffering before recovering.
+       hardTimer=setTimeout(()=>{
+         $('zekeAiVoiceStatus').textContent='Audio timed out after 90 seconds; recovering microphone.';
+         try{audio.pause()}catch(e){}
+         complete();
+       },90000);
      }catch(e){complete();$('zekeAiVoiceStatus').textContent='Bluetooth playback blocked: '+e.message}
    });
  }catch(e){
