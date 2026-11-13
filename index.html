@@ -74,7 +74,10 @@ function zekeStopMotion(){
 }
 function zekeScheduleSpeechMotion(){
  zekeClearMotionTimers();
- if(!$('zekeNaturalMotion')?.checked||!writer||sleeping)return;
+ if(!$('zekeNaturalMotion')?.checked){zekeMotionStatus('Movement disabled: checkbox is off.');return}
+ if(!writer){zekeMotionStatus('Movement unavailable during speech: BLE command connection is not active. Reconnect Zeke directly.');return}
+ if(sleeping){zekeMotionStatus('Movement paused: bedtime mode is active.');return}
+ zekeMotionStatus('Speech detected. Preparing BLE movement command…');
  const generation=zekeMotionGeneration;
  // Motion cycles while speech is actually playing; zekeStopMotion() cancels them on completion.
  const schedule=(delay,enabled)=>{
