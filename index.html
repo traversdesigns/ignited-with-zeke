@@ -65,34 +65,34 @@ let zekeMotionTimers=[],zekeMotionGeneration=0;
 function zekeMotionStatus(t){const el=$('zekeMotionStatus');if(el)el.textContent=t}
 function zekeClearMotionTimers(){zekeMotionGeneration++;for(const timer of zekeMotionTimers)clearTimeout(timer);zekeMotionTimers=[]}
 async function zekeSetMovement(enabled){
- if(!writer)return;
- await writer.writeValue(cmd('AACA',enabled?'FF00000000':'0000000000'));
+ if(!window.zekeBleSend)return false;
+ await window.zekeBleSend('AACA',enabled?'0600000000':'0000000000');
+ return true;
 }
 function zekeStopMotion(){
  zekeClearMotionTimers();
- if(writer)zekeSetMovement(false).catch(e=>zekeMotionStatus('Movement stop command failed: '+e.message));
+ if(window.zekeBleConnected?.())zekeSetMovement(false).catch(e=>zekeMotionStatus('Movement stop command failed: '+e.message));
 }
 function zekeScheduleSpeechMotion(){
  zekeClearMotionTimers();
  if(!$('zekeNaturalMotion')?.checked){zekeMotionStatus('Movement disabled: checkbox is off.');return}
- if(!writer){zekeMotionStatus('Movement unavailable during speech: BLE command connection is not active. Reconnect Zeke directly.');return}
- if(sleeping){zekeMotionStatus('Movement paused: bedtime mode is active.');return}
- zekeMotionStatus('Speech detected. Preparing BLE movement command…');
+ if(!window.zekeBleConnected?.()){zekeMotionStatus('Movement unavailable: direct Bluetooth connection is not active.');return}
+ if(window.zekeIsSleeping?.()){zekeMotionStatus('Movement paused: bedtime mode is active.');return}
  const generation=zekeMotionGeneration;
- // Motion cycles while speech is actually playing; zekeStopMotion() cancels them on completion.
- const schedule=(delay,enabled)=>{
-  const id=setTimeout(async()=>{
-   if(generation!==zekeMotionGeneration||sleeping||!writer||!speaking)return;
+ const schedule=(delay)=>{
+  const timer=setTimeout(async()=>{
+   if(generation!==zekeMotionGeneration||window.zekeIsSleeping?.()||!window.zekeBleConnected?.()||!speaking)return;
    try{
-     await zekeSetMovement(enabled);
-     if(generation!==zekeMotionGeneration)return;
-     zekeMotionStatus(enabled?'Movement enabled during speech.':'Natural stillness during speech.');
-     schedule(enabled?1100:3100,!enabled);
-   }catch(e){zekeMotionStatus('Movement command failed: '+e.message);zekeStopMotion()}
+    await zekeSetMovement(true);
+    if(generation!==zekeMotionGeneration)return;
+    zekeMotionStatus('Arm + torso gesture triggered during speech.');
+    schedule(3000+Math.floor(Math.random()*2300));
+   }catch(e){zekeMotionStatus('Movement command failed: '+e.message);zekeClearMotionTimers()}
   },delay);
-  zekeMotionTimers.push(id);
+  zekeMotionTimers.push(timer);
  };
- schedule(200,true);
+ zekeMotionStatus('Speech started. Gestures armed.');
+ schedule(300);
 }
 $('zekeNaturalMotion').onchange=()=>{
  if(!$('zekeNaturalMotion').checked){zekeStopMotion();zekeMotionStatus('Natural movement disabled.')}
@@ -377,6 +377,13 @@ let device=null,writer=null,notify=null;
 const status=t=>$('zekeDirectStatus').textContent=t;
 function crc8(bytes){let crc=0;for(const b of bytes){let x=crc^b;for(let i=0;i<8;i++)x=x&1?(x>>>1)^0x8c:x>>>1;crc=x&255}return crc}
 function cmd(tag,payload){const hex=tag+payload.padEnd(16,'0');const bytes=new Uint8Array(hex.match(/../g).map(h=>parseInt(h,16)));return Uint8Array.from([...bytes,crc8(bytes)])}
+// Share existing BLE writer with speech gestures, without opening another connection.
+window.zekeBleConnected=()=>!!(writer&&device?.gatt?.connected);
+window.zekeBleSend=async(tag,payload)=>{
+ if(!writer||!device?.gatt?.connected)throw Error('Direct Bluetooth is disconnected');
+ await writer.writeValue(cmd(tag,payload));
+};
+window.zekeIsSleeping=()=>sleeping;
 function disconnected(){zekeClearMotionTimers();writer=null;notify=null;$('zekeDirectLive').disabled=true;$('zekeDirectDisconnect').disabled=true;status('BLE disconnected.')}
 $('zekeDirectConnect').onclick=async()=>{if(!navigator.bluetooth){status('Web Bluetooth unavailable. Open Chrome on Samsung over HTTPS.');return}try{status('Choose Ultra Skelly in the Bluetooth picker…');device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'Ultra Skelly'}],optionalServices:[svc]});device.addEventListener('gattserverdisconnected',disconnected);const server=await device.gatt.connect();const service=await server.getPrimaryService(svc);writer=await service.getCharacteristic(wr);notify=await service.getCharacteristic(nt);await notify.startNotifications();notify.addEventListener('characteristicvaluechanged',e=>{const bytes=new Uint8Array(e.target.value.buffer);const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();if(hex.startsWith('BBFD'))status('Live Mode acknowledged by Zeke ('+hex+'). Check Samsung media output for Ultra Skelly v2(Live).')});$('zekeDirectLive').disabled=false;$('zekeDirectDisconnect').disabled=false;status('Connected directly to '+(device.name||'Zeke')+'. Ready to activate Live Mode.')}catch(e){status('BLE connection failed: '+e.message)}};
 $('zekeDirectLive').onclick=async()=>{if(!writer){status('Connect Zeke first.');return}try{await writer.writeValue(cmd('AAFD','01'));status('Live Mode command sent. Wait for acknowledgment, then check Samsung Bluetooth audio.')}catch(e){status('Live Mode command failed: '+e.message)}};
