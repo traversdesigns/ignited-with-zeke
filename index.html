@@ -531,6 +531,7 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
    recorder.onerror=e=>setStatus('Recording error: '+(e.error?.message||'unknown'));
    recorder.onstop=()=>{
     const captured=window.zekeRecordingCapture?.stop();
+    window.zekeRecordingCapture?.setVideo?.(new Blob(chunks,{type:recorder.mimeType||mime||'video/mp4'}));
     const actual=recorder.mimeType||mime||'video/mp4';
     if(!chunks.length){setStatus('No video data was captured.');return}
     const ext=actual.includes('webm')?'webm':'mp4';
@@ -559,11 +560,26 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
 // Development-only passive recording capture. No microphone, audio routing or Bluetooth changes.
 (function(){
  const events=[];
- let startedAt=performance.now(),enabled=false;
+ let startedAt=performance.now(),enabled=false,video=null;
+ const download=(blob,name)=>{
+  const a=document.createElement('a'),u=URL.createObjectURL(blob);
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),60000);
+ };
+ const exportClips=()=>{
+  if(enabled)throw Error('Stop recording before exporting audio clips.');
+  if(!events.length)throw Error('No audio clips were captured. Use direct microphone mode.');
+  const manifest={version:1,description:'Development diagnostic: separate audio clips, not a finished sound video',videoMime:video?.type||null,clips:events.map((e,i)=>({file:'clip-'+String(i+1).padStart(2,'0')+(e.mime.includes('mp4')?'.m4a':e.mime.includes('webm')?'.webm':'.audio'),role:e.role,offsetMs:e.offsetMs,mime:e.mime,bytes:e.blob.size}))};
+  download(new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'}),'Zeke-audio-timeline.json');
+  events.forEach((e,i)=>download(e.blob,manifest.clips[i].file));
+  return manifest;
+ };
  window.zekeRecordingCapture={
-  start(){events.length=0;startedAt=performance.now();enabled=true},
+  start(){events.length=0;video=null;startedAt=performance.now();enabled=true},
   stop(){enabled=false;return events.slice()},
-  status(){return {active:enabled,clips:events.length,types:events.map(x=>x.role)}}
+  setVideo(blob){video=blob},
+  exportClips,
+  status(){return {active:enabled,clips:events.length,types:events.map(x=>x.role),videoBytes:video?.size||0}}
  };
  window.zekeRecordingObserve=(role,blob)=>{
   if(!enabled||!blob||!blob.size)return;
