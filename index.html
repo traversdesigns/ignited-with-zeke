@@ -499,4 +499,39 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else init();
 })();
-</script></body></html>
+</script><script>
+/* Independent BLE motor diagnostic, deliberately separate from voice initialization. */
+(function(){
+ const el=document.getElementById('zekeMotionStatus');
+ const arm=document.getElementById('zekeTestArm'),torso=document.getElementById('zekeTestTorso'),stop=document.getElementById('zekeTestMotionOff');
+ if(!el||!arm||!torso||!stop)return;
+ let timer=null;
+ const report=t=>{el.textContent=t};
+ const send=async(payload)=>{
+  if(typeof window.zekeBleSend!=='function')throw Error('Direct BLE command bridge is unavailable');
+  if(!window.zekeBleConnected?.())throw Error('Direct BLE not connected. Connect Zeke in the section below.');
+  await window.zekeBleSend('AACA',payload);
+ };
+ async function test(bits,label){
+  clearTimeout(timer);
+  report('Testing '+label+': checking Bluetooth connection…');
+  try{
+   await send(bits+'00000000');
+   report(label+' movement command SENT over Bluetooth. Watching for physical movement (2 seconds)…');
+   timer=setTimeout(async()=>{
+    try{await send('0000000000');report(label+' test finished. Bluetooth accepted the command. Did Zeke move?')}
+    catch(e){report(label+' test sent, but stop command failed: '+e.message)}
+   },2000);
+  }catch(e){report(label+' test FAILED: '+e.message)}
+ }
+ arm.onclick=()=>test('02','Arm');
+ torso.onclick=()=>test('04','Torso');
+ stop.onclick=async()=>{
+  clearTimeout(timer);report('Sending movement stop…');
+  try{await send('0000000000');report('Movement stop command SENT.')}
+  catch(e){report('Movement stop FAILED: '+e.message)}
+ };
+ report('Movement diagnostics ready. Connect Direct BLE below, then test arm or torso.');
+})();
+</script>
+</body></html>
