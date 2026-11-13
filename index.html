@@ -476,4 +476,15 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else init();
 })();
-</script></body></html>
+</script><script>
+(function(){
+ const button=document.getElementById('zekeDirectConnect');
+ const status=document.getElementById('zekeDirectStatus');
+ if(!button||!status)return;
+ button.addEventListener('click',()=>{
+  status.textContent='Connect button tapped. Bluetooth support: '+(navigator.bluetooth?'available':'unavailable')+'. Waiting for device picker or connection result…';
+ },true);
+ status.textContent='Connection diagnostic loaded. Tap Connect Zeke directly.';
+})();
+</script>
+</body></html>
