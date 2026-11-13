@@ -530,17 +530,18 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
    recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
    recorder.onerror=e=>setStatus('Recording error: '+(e.error?.message||'unknown'));
    recorder.onstop=()=>{
+    const captured=window.zekeRecordingCapture?.stop();
     const actual=recorder.mimeType||mime||'video/mp4';
     if(!chunks.length){setStatus('No video data was captured.');return}
     const ext=actual.includes('webm')?'webm':'mp4';
     file=new File(chunks,'Zeke-'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext,{type:actual});
     url=URL.createObjectURL(file);playback.src=url;save.href=url;save.download=file.name;result.hidden=false;
-    setStatus('Video ready ('+(file.size/1048576).toFixed(1)+' MB). Tap Save video or Share / Save to Files.');
+    setStatus('Video ready ('+(file.size/1048576).toFixed(1)+' MB). Captured '+(captured?.length||0)+' audio clips separately for development. This exported video is still silent.');
     record.disabled=false;stop.disabled=true;
    };
-   recorder.start(1000);record.disabled=true;stop.disabled=false;camera.disabled=true;
+   window.zekeRecordingCapture?.start();recorder.start(1000);record.disabled=true;stop.disabled=false;camera.disabled=true;
    setStatus('Recording silent video. Zeke\'s microphone is untouched. Keep IGNITED visible.');
-  }catch(e){camera.disabled=false;setStatus('Could not start recording: '+e.message)}
+  }catch(e){window.zekeRecordingCapture?.stop();camera.disabled=false;setStatus('Could not start recording: '+e.message)}
  };
  stop.onclick=()=>{
   if(recorder?.state==='recording'){recorder.stop();stop.disabled=true;camera.disabled=false}
