@@ -157,6 +157,7 @@ async function say(t){
    const blob=await response.blob();
    if(!blob.size||!blob.type.startsWith('audio/'))throw Error('Empty audio');
    if(request!==zekeVoiceRequest)return;
+   try{window.zekeRecordingObserve?.('zeke',blob)}catch(e){}
    const url=URL.createObjectURL(blob);
    const audio=zekeSharedAudio||new Audio();
    if(zekeSharedUrl)URL.revokeObjectURL(zekeSharedUrl);
@@ -250,7 +251,7 @@ async function zekeStartDirect(){
      recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
      recorder.onstop=async()=>{
        if(generation!==zekeDirectGeneration||!active||!chunks.length)return;
-       const blob=new Blob(chunks,{type:mime});zekeDirectBusy=true;
+       const blob=new Blob(chunks,{type:mime});try{window.zekeRecordingObserve?.('visitor',blob)}catch(e){}zekeDirectBusy=true;
        await zekeStopDirect();
        // zekeStopDirect increments generation to invalidate stale recorder callbacks.
        $('status').textContent='Understanding what you said…';
@@ -552,5 +553,20 @@ $('zekeDirectDisconnect').onclick=()=>{device?.gatt?.disconnect();disconnected()
   }catch(e){if(e.name!=='AbortError')setStatus('Share failed: '+e.message)}
  };
  window.addEventListener('pagehide',()=>{if(recorder?.state==='recording')return;if(stream)stream.getTracks().forEach(t=>t.stop())});
+})();
+</script><script>
+// Development-only passive recording capture. No microphone, audio routing or Bluetooth changes.
+(function(){
+ const events=[];
+ let startedAt=performance.now(),enabled=false;
+ window.zekeRecordingCapture={
+  start(){events.length=0;startedAt=performance.now();enabled=true},
+  stop(){enabled=false;return events.slice()},
+  status(){return {active:enabled,clips:events.length,types:events.map(x=>x.role)}}
+ };
+ window.zekeRecordingObserve=(role,blob)=>{
+  if(!enabled||!blob||!blob.size)return;
+  events.push({role,blob,offsetMs:Math.round(performance.now()-startedAt),mime:blob.type});
+ };
 })();
 </script></body></html>
