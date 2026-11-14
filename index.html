@@ -125,14 +125,26 @@ function announcement(){
 function tickAnnouncements(){
  if(!active||$('character').value!=='Vendor Event')return;
  zekeGenerateNextLine();
- if(speaking||armed||zekeBusy)return;
+ if(speaking||armed||zekeBusy||zekeDirectBusy||zekeDirectRecorder?.state==='recording')return;
  const min=Number($('interval').value)*60000,now=Date.now();
  if(now-lastAnnouncementAt<min||now-lastVisitorAt<min)return;
  const line=announcement();
- if(line){lastAnnouncementAt=now;$('engstatus').textContent='Last announcement: '+new Date(now).toLocaleTimeString()+' (AI variety with rotating backup)';say(line)}
+ if(line){lastAnnouncementAt=now;$('engstatus').textContent='Last announcement: '+new Date(now).toLocaleTimeString()+' (AI variety with rotating backup)';zekeSpeakAnnouncement(line)}
+}
+async function zekeSpeakAnnouncement(line){
+ if(!active||speaking||zekeBusy||zekeDirectBusy)return;
+ const session=zekeSession;
+ try{
+  // Stop capture before speaking so Zeke never transcribes his own announcement.
+  await zekeStopDirect();
+  if(!active||session!==zekeSession)return;
+  await say(line);
+ }finally{
+  if(active&&session===zekeSession)zekeQueueDirectRestart(500);
+ }
 }
 announcementTimer=setInterval(tickAnnouncements,1000);
-$('preview').onclick=()=>{const line=announcement();if(line)say(line);else $('engstatus').textContent='Enable at least one engagement category first.'};
+$('preview').onclick=()=>{const line=announcement();if(line)zekeSpeakAnnouncement(line);else $('engstatus').textContent='Enable at least one engagement category first.'};
 
 $('mode').value=load('mode','auto');$('character').value=load('character','Vendor Event');$('prompt').value=load('prompt',MASTER_PROMPT);$('rate').value=load('rate','0.95');$('rateout').textContent=$('rate').value;
 $('mode').onchange=()=>{store('mode',$('mode').value);armed=false};$('character').onchange=()=>store('character',$('character').value);$('rate').oninput=()=>{$('rateout').textContent=$('rate').value;store('rate',$('rate').value)};
@@ -261,8 +273,10 @@ async function say(t){
    try{speechSynthesis.speak(u)}catch(e){complete()}
  });
  try{
-   if(!$('zekeAiVoiceEnabled')?.checked||!$('zekePin').value.trim()){
-     await localVoice();return;
+   if(!$('zekeAiVoiceEnabled')?.checked){await localVoice();return}
+   if(!$('zekePin').value.trim()){
+     $('zekeAiVoiceStatus').textContent='Enter the AI access code. Tablet fallback suppressed for Zeke voice.';
+     return;
    }
    const pin=$('zekePin').value.trim();
    $('zekeAiVoiceStatus').textContent='Generating Zeke\'s male voice…';
@@ -313,8 +327,7 @@ async function say(t){
      }catch(e){complete();$('zekeAiVoiceStatus').textContent='Bluetooth playback blocked: '+e.message}
    });
  }catch(e){
-   $('zekeAiVoiceStatus').textContent='AI voice error: '+e.message+'. Trying device voice.';
-   if(request===zekeVoiceRequest)await localVoice();
+   $('zekeAiVoiceStatus').textContent='AI voice error: '+e.message+'. Tablet voice fallback suppressed. Check PIN, network and Bluetooth media output.';
  }finally{
    finish();
  }
