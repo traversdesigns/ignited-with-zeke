@@ -81,15 +81,56 @@ const engagementLines={
  fragrance:["Quick fragrance question! Fresh laundry or warm vanilla? There are no wrong answers, but I reserve the right to be dramatic.","Would you rather your house smell like a tropical beach or a cozy cabin? I'm conducting extremely unofficial research.","What's a smell that instantly reminds you of childhood? Mine is... complicated. Three hundred years is a long time."],
  networking:["Anybody here run a business or a side hustle? I'm exploring career options. Current management won't approve my raise.","What kind of work do you folks do? I'm technically upper management, but nobody's told me what I manage.","Own a business? Come tell us about it! I'm the networking department. My budget is exactly zero dollars."]
 };
-function announcement(){
+
+const zekeRecentLines=[];
+let zekeQueuedLine=null,zekeGenerating=false,zekeRetryAfter=0;
+function zekeFallbackAnnouncement(){
  const types=['flyers','fragrance','networking'].filter(k=>$(k).checked);
  if(zekeEventToday()&&$('eventSpecialsEnabled').checked)types.push('specials');
  if(!types.length)return null;
  const type=types[announcementIndex%types.length];
- const msg=type==='specials'?zekeSpecialAnnouncement():engagementLines[type][Math.floor(announcementIndex/types.length)%engagementLines[type].length];
- announcementIndex++;return msg;
+ let lines;
+ if(type==='specials'){
+  const n=Number($('eventFreeRemaining').value);
+  lines=[
+   'Scentsy bars, five for twenty-five dollars today! Five ways to make your home smell better than my crypt!',
+   'Fragrance Flowers, three for forty dollars today! Come see Rhonda or Mike about those fragrant little beauties!',
+   'Most warmers are twenty-five dollars today! Exceptions apply. Come see which ones are calling your name!',
+   'Full-size Rodeo warmer, forty dollars today instead of fifty-five! Cowboy boots that make your room smell better!',
+   n>0?'Get a free mini crockpot when you buy a mini warmer and additional products totaling at least thirty-five dollars altogether! Only '+n+' left, while supplies last!':'The free mini crockpot offer has sold out, but our other specials are still worth a look!'
+  ];
+ }else lines=engagementLines[type];
+ const line=lines[Math.floor(announcementIndex/types.length)%lines.length];
+ announcementIndex++;
+ return line;
 }
-function tickAnnouncements(){if(!active||$('character').value!=='Vendor Event'||speaking||armed)return;const min=Number($('interval').value)*60000,now=Date.now();if(now-lastAnnouncementAt<min||now-lastVisitorAt<min)return;const line=announcement();if(line){lastAnnouncementAt=now;$('engstatus').textContent='Last timed announcement: '+new Date(now).toLocaleTimeString();say(line)}}
+function zekeGenerateNextLine(){
+ if(zekeGenerating||zekeQueuedLine||Date.now()<zekeRetryAfter||!active||$('character').value!=='Vendor Event'||!$('zekePin').value.trim())return;
+ zekeGenerating=true;
+ const topics=['specials','warmers','wax bars','fragrance flowers','decorating','skeleton jokes','invite shoppers'];
+ const topic=topics[announcementIndex%topics.length];
+ const verified=zekeEventToday()&&$('eventSpecialsEnabled').checked?zekeSpecialAnnouncement():'Do not mention dated prices or promotions.';
+ const prompt='Write ONE fresh 20 to 45 word family-friendly booth announcement spoken by Ezekiel Salvo, a sarcastic and friendly skeleton at Rhonda and Mike Scentsy booth. Topic: '+topic+'. These are the ONLY allowed promotional facts: '+verified+'. Never invent prices, inventory, features, or benefits. No markdown or labels. Use different wording, jokes, openings and endings from these previous lines: '+zekeRecentLines.slice(-8).join(' | ')+'. Invite people to visit the booth.';
+ zekeAsk(prompt).then(line=>{
+  line=String(line||'').trim();
+  if(active&&$('character').value==='Vendor Event'&&line.length>30&&line.length<650&&!zekeRecentLines.includes(line.toLowerCase()))zekeQueuedLine=line;
+ }).catch(e=>{zekeRetryAfter=Date.now()+60000;$('engstatus').textContent='AI unavailable; rotating prepared announcements.'}).finally(()=>{zekeGenerating=false});
+}
+function announcement(){
+ const line=zekeQueuedLine||zekeFallbackAnnouncement();
+ zekeQueuedLine=null;
+ if(line){zekeRecentLines.push(line.toLowerCase());if(zekeRecentLines.length>12)zekeRecentLines.shift()}
+ return line;
+}
+function tickAnnouncements(){
+ if(!active||$('character').value!=='Vendor Event')return;
+ zekeGenerateNextLine();
+ if(speaking||armed||zekeBusy)return;
+ const min=Number($('interval').value)*60000,now=Date.now();
+ if(now-lastAnnouncementAt<min||now-lastVisitorAt<min)return;
+ const line=announcement();
+ if(line){lastAnnouncementAt=now;$('engstatus').textContent='Last announcement: '+new Date(now).toLocaleTimeString()+' (AI variety with rotating backup)';say(line)}
+}
 announcementTimer=setInterval(tickAnnouncements,1000);
 $('preview').onclick=()=>{const line=announcement();if(line)say(line);else $('engstatus').textContent='Enable at least one engagement category first.'};
 
