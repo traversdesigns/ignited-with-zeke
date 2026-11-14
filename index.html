@@ -43,6 +43,7 @@ $('saveeng').onclick=saveEng;
 for(const k of ['flyers','fragrance','networking']) $(k).onchange=saveEng;
 const zekeEventToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Chicago'})==='2026-11-14';
 $('eventSpecialsEnabled').checked=load('eventSpecialsEnabled','true')==='true';
+if(load('zekeSpecialsNov14Corrected','')!=='yes'){store('eventFreeRemaining','2');store('zekeSpecialsNov14Corrected','yes');localStorage.removeItem('chester_zekeLiveSpecials')}
 $('eventFreeRemaining').value=load('eventFreeRemaining','2');
 $('eventSpecialsEnabled').onchange=()=>{store('eventSpecialsEnabled',String($('eventSpecialsEnabled').checked));zekeQueuedLine=null};
 $('eventFreeRemaining').onchange=()=>{
@@ -104,6 +105,7 @@ function zekeGenerateNextLine(){
 function announcement(){
  const specialDue=zekeEventToday()&&$('eventSpecialsEnabled').checked&&announcementIndex%4===3;
  const line=specialDue?zekeFallbackAnnouncement():(zekeQueuedLine||zekeFallbackAnnouncement());
+ if(!specialDue&&zekeQueuedLine)announcementIndex++;
  zekeQueuedLine=null;
  if(line){zekeQueuedLine=null;zekeRecentLines.push(line.toLowerCase());if(zekeRecentLines.length>12)zekeRecentLines.shift()}
  return line;
