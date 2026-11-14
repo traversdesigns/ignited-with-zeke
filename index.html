@@ -7,7 +7,7 @@
 <div class="bubble" id="liveStatus" role="status">Ready. Zeke is not connected to TikTok or AI.</div>
 <h4>Viewer comment review queue</h4><label>Viewer display name (optional)<input id="viewerName" style="width:100%" placeholder="e.g. @viewer"></label><label>Comment or question<textarea id="viewerComment" style="min-height:75px" placeholder="Paste a viewer comment here for review"></textarea></label><button id="queueComment">Add to review queue</button><div id="commentQueue" class="bubble">No comments queued.</div>
 <label>Approved reply / talking point<textarea id="approvedReply" style="min-height:90px" placeholder="Type an approved response for Zeke to speak; no automatic AI response yet"></textarea></label><button id="liveSpeak">🔊 Speak approved reply</button><button id="liveExport" class="secondary">Export LIVE settings & AI integration brief</button>
-<p class="muted mini">Comments are not automatically fetched. No automatic comment moderation or AI generation is claimed. The local queue screens out a few obvious sensitive patterns, but a human must review all comments before speaking. Don't read payment details or personal information aloud.</p></section><section><h3>Zeke's complete master prompt</h3><p class="muted">All 21 original sections are built into this console. Section 22 is maintained separately below. You can edit and save your own changes locally; export a backup if you do.</p><textarea id="prompt" placeholder="The complete 21-section master prompt is built in"></textarea><details><summary>View Section 22 engagement instructions (separate from original)</summary><textarea id="section22" readonly style="min-height:360px"></textarea></details><button id="save">Save master prompt locally</button><button id="export" class="secondary">Export prompt as text</button><input type="file" id="import" accept=".txt,.md"/><p id="saved" class="muted"></p></section><section><h3>🎙 Zeke's AI Male Voice</h3><label class="checkrow"><input id="zekeAiVoiceEnabled" type="checkbox" checked><span>Use male AI voice when speech service is available</span></label><p id="zekeAiVoiceStatus" role="status">AI audio playback is ready. Cloudflare Worker /speak endpoint must be installed separately; tablet voice is the fallback.</p><p class="muted mini">Audio follows Samsung media output. Jaw synchronization remains unverified.</p></section><section><h3>🎙 Zeke's Voice Studio</h3><p class="muted">Choose a voice offered by this browser, then preview it through the currently connected audio output. For Zeke's speaker and jaw, connect Ultra Skelly v2 (Live) first.</p>
+<p class="muted mini">Comments are not automatically fetched. No automatic comment moderation or AI generation is claimed. The local queue screens out a few obvious sensitive patterns, but a human must review all comments before speaking. Don't read payment details or personal information aloud.</p></section><section><h3>Zeke's complete master prompt</h3><p class="muted">All 21 original sections are built into this console. Section 22 is maintained separately below. You can edit and save your own changes locally; export a backup if you do.</p><textarea id="prompt" placeholder="The complete 21-section master prompt is built in"></textarea><details><summary>View Section 22 engagement instructions (separate from original)</summary><textarea id="section22" readonly style="min-height:360px"></textarea></details><button id="save">Save master prompt locally</button><button id="export" class="secondary">Export prompt as text</button><input type="file" id="import" accept=".txt,.md"/><p id="saved" class="muted"></p></section><section><h3>🎙 Zeke's AI Male Voice</h3><label class="checkrow"><input id="zekeAiVoiceEnabled" type="checkbox" checked><span>Use male AI voice when speech service is available</span></label><label>Voice output <select id="zekeMallVoiceMode"><option value="normal">Normal (unchanged)</option><option value="boost">Boost (experimental)</option><option value="mall">Mall Mode (experimental)</option></select></label><p class="muted mini">Development test only. Audio is processed before playback; the existing Bluetooth audio player and BLE commands stay unchanged. May add a short delay.</p><p id="zekeAiVoiceStatus" role="status">AI audio playback is ready. Cloudflare Worker /speak endpoint must be installed separately; tablet voice is the fallback.</p><p class="muted mini">Audio follows Samsung media output. Jaw synchronization remains unverified.</p></section><section><h3>🎙 Zeke's Voice Studio</h3><p class="muted">Choose a voice offered by this browser, then preview it through the currently connected audio output. For Zeke's speaker and jaw, connect Ultra Skelly v2 (Live) first.</p>
 <label>Available English voice <select id="voice"></select></label><button id="refreshVoices" class="secondary">↻ Refresh voices</button>
 <label>Speech speed <input id="rate" type="range" min="0.7" max="1.3" value="0.95" step="0.05"/> <span id="rateout">0.95</span></label>
 <label>Voice pitch <input id="pitch" type="range" min="0.5" max="1.5" value="0.8" step="0.05"/> <span id="pitchout">0.80</span></label>
@@ -98,6 +98,42 @@ $('zekeNaturalMotion').onchange=()=>{
  if(!$('zekeNaturalMotion').checked){zekeStopMotion();zekeMotionStatus('Natural movement disabled.')}
  else zekeMotionStatus('Armed for the next spoken reply. Connect direct BLE and leave space around Zeke.');
 };
+async function zekeOfflineVoiceBoost(blob,mode){
+ const AudioCtx=window.AudioContext||window.webkitAudioContext;
+ const OfflineCtx=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+ if(!AudioCtx||!OfflineCtx)throw Error('Offline audio processing unsupported');
+ if(blob.size>12*1048576)throw Error('Voice clip too large for safe offline processing');
+ const decoder=new AudioCtx();let source;
+ try{source=await decoder.decodeAudioData(await blob.arrayBuffer())}
+ finally{await decoder.close()}
+ if(source.duration>45)throw Error('Voice clip exceeds 45-second processing limit');
+ const rate=source.sampleRate,channels=Math.min(source.numberOfChannels,2);
+ const offline=new OfflineCtx(channels,source.length,rate);
+ const input=offline.createBufferSource();input.buffer=source;
+ const compressor=offline.createDynamicsCompressor();
+ compressor.threshold.value=mode==='mall'?-30:-22;
+ compressor.knee.value=16;compressor.ratio.value=mode==='mall'?5:3;
+ compressor.attack.value=0.006;compressor.release.value=0.18;
+ const gain=offline.createGain();gain.gain.value=mode==='mall'?1.85:1.35;
+ input.connect(compressor);compressor.connect(gain);gain.connect(offline.destination);
+ input.start(0);
+ const rendered=await offline.startRendering();
+ const frames=rendered.length;
+ const bytes=new ArrayBuffer(44+frames*channels*2),view=new DataView(bytes);
+ const str=(at,v)=>{for(let i=0;i<v.length;i++)view.setUint8(at+i,v.charCodeAt(i))};
+ str(0,'RIFF');view.setUint32(4,36+frames*channels*2,true);str(8,'WAVE');
+ str(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,channels,true);
+ view.setUint32(24,rate,true);view.setUint32(28,rate*channels*2,true);
+ view.setUint16(32,channels*2,true);view.setUint16(34,16,true);
+ str(36,'data');view.setUint32(40,frames*channels*2,true);
+ for(let i=0;i<frames;i++)for(let c=0;c<channels;c++){
+  const x=rendered.getChannelData(c)[i];
+  const y=Math.tanh(x*1.2)/Math.tanh(1.2);
+  const v=Math.max(-1,Math.min(1,y));
+  view.setInt16(44+(i*channels+c)*2,Math.round(v<0?v*32768:v*32767),true);
+ }
+ return new Blob([bytes],{type:'audio/wav'});
+}
 let zekeAudio=null,zekeVoiceRequest=0,zekeSharedAudio=null,zekeSharedUrl=null,zekePlaybackWatchdog=null,zekeHardPlaybackTimer=null;
 function zekeUnlockAudio(){
  try{
@@ -157,7 +193,13 @@ async function say(t){
    const blob=await response.blob();
    if(!blob.size||!blob.type.startsWith('audio/'))throw Error('Empty audio');
    if(request!==zekeVoiceRequest)return;
-   const url=URL.createObjectURL(blob);
+   let voiceBlob=blob;
+   const voiceMode=document.getElementById('zekeMallVoiceMode')?.value||'normal';
+   if(voiceMode!=='normal'){
+    try{voiceBlob=await zekeOfflineVoiceBoost(blob,voiceMode)}
+    catch(boostError){$('zekeAiVoiceStatus').textContent='Voice boost unavailable, playing original: '+boostError.message}
+   }
+   const url=URL.createObjectURL(voiceBlob);
    const audio=zekeSharedAudio||new Audio();
    if(zekeSharedUrl)URL.revokeObjectURL(zekeSharedUrl);
    zekeSharedUrl=url;zekeAudio=audio;audio.src=url;
